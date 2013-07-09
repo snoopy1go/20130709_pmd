@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="sample" basedir=".">
+  <property file="build.properties" />
+
+  <!-- *************************** パス定義 ***************************-->
+  <path id="tools_lib">
+    <fileset dir="${tools.lib}">
+      <include name="**/*.jar" />
+    </fileset>
+    <path refid="test_lib"/>
+  </path>
+
+  <path id="pmd_lib">
+    <fileset dir="${pmd.lib}">
+      <include name="**/*.jar" />
+    </fileset>
+  </path>
+
+  <path id="extended_static_analysis_exec_lib">
+    <path refid="tools_lib" />
+    <path refid="main.classes" />
+  </path>
+
+
+  <path id="test_lib">
+    <fileset dir="${test.lib}">
+      <include name="**/*.jar" />
+    </fileset>
+    <path refid="main.classes" />
+  </path>
+
+  <path id="test.classes" >
+    <pathelement location="${test.classes.dist}"/>
+  </path>
+
+  <path id="main.classes">
+    <pathelement location="${production.classes.dist}"/>
+  </path>
+
+  <!-- *************************** ターゲット定義 ***************************-->
+  <target name="prepare_for_test" depends="prepare,compile.production,
+                                           compile.test,
+                                           edit.finger.print.file,
+                                           findbugs,
+                                           cpd"/>
+
+  <target name="prepare">
+    <delete dir="${dist.root}" />
+    <mkdir dir="${dist.root}" />
+  </target>
+
+  <target name="compile.production" depends="prepare">
+    <delete dir="${production.classes.dist}" />
+    <mkdir dir="${production.classes.dist}" />
+    <javac srcdir="${production.src.dir}" destdir="${production.classes.dist}" classpathref="tools_lib" encoding="UTF-8" debug="on"/>
+
+  </target>
+
+  <target name="compile.test">
+    <delete dir="${test.classes.dist}" />
+    <mkdir dir="${test.classes.dist}" />
+    <javac srcdir="${test.src.dir}" destdir="${test.classes.dist}" classpathref="test_lib" encoding="UTF-8" debug="on" />
+
+  </target>
+
+  <target name="edit.finger.print.file">
+    <delete dir="${dist.root}/finger_print" />
+    <mkdir dir="${dist.root}/finger_print" />
+    <unzip src="dummy_finger_print.zip" dest="${dist.root}/finger_print" />
+    <tstamp>
+        <format property="execDateTime" pattern="yyyyMMddHHmmssSSS" />
+    </tstamp>
+    <touch file="${dist.root}/finger_print/${execDateTime}"/>
+    <zip basedir="${dist.root}/finger_print" destfile="${dist.root}/finger_print.zip" />
+  </target>
+
+  <target name="test">
+    <rename dest="" src=""/>
+    <junit printsummary="on">
+      <classpath refid="main.classes" />
+      <classpath refid="test.classes" />
+
+      <classpath refid="test_lib" />
+      <batchtest todir="${dist.root}" fork="true">
+        <formatter type="xml" />
+        <fileset dir="${test.src.dir}">
+          <include name="**/*Test*.java" />
+        </fileset>
+      </batchtest>
+    </junit>
+  </target>
+
+  <target name="touch">
+    <touch>
+      <fileset dir="${dist.root}">
+        <include name="*Test*.xml"/>
+      </fileset>
+    </touch>
+    <echo message="executed host:${label}"></echo>
+  </target>
+
+  <target name="extendedStaticAnalysys" depends="compile.production">
+    <!-- 準備 -->
+    <delete dir="${extendedStaticAnalysys.dist}" />
+    <mkdir dir="${extendedStaticAnalysys.dist}" />
+
+    <taskdef name="analyze" classname="tool.staticanalysis.anttask.ExtendedStaticAnalysis" classpathref="extended_static_analysis_exec_lib" />
+    <analyze outputDir="${extendedStaticAnalysys.dist}">
+      <!-- 実施する解析 -->
+      <analyzer id="MasterDataUseAnalyzer" classname="tool.staticanalysis.analyzer.MasterDataUseAnalyzer" options="searchDataFilePath=.\in\targetMasterData.txt" />
+      <analyzer id="ComponentUseScopeAnalyzer" classname="tool.staticanalysis.analyzer.ComponentUseScopeAnalyzer" />
+      <analyzer id="ComponentUseScopeAnalyzer2" classname="tool.staticanalysis.analyzer.ComponentUseScopeAnalyzer2" />
+      <analyzer id="JspCssClassAnalyzer" classname="tool.staticanalysis.analyzer.JspCssClassAnalyzer" />
+
+      <!-- 解析対象のファイル -->
+      <fileset dir=".">
+        <exclude name="**/*.class" />
+        <exclude name="**/*.jar" />
+        <exclude name="**/*.zip" />
+        <exclude name="**/*.classpath" />
+      </fileset>
+    </analyze>
+  </target>
+
+
+  <taskdef name="findbugs" classname="edu.umd.cs.findbugs.anttask.FindBugsTask" classpathref="tools_lib"/>
+  <target name="findbugs" depends="make.findbugs.custom.detector,compile.production">
+    <delete dir="${dist.root}/findbugs" />
+    <mkdir dir="${dist.root}/findbugs"/>
+    <findbugs home="${findbugs.home}"
+              output="xml"
+              outputFile="${dist.root}/findbugs/tools-findbugs.xml">
+      <auxClasspath  refid="tools_lib" />
+      <sourcePath path="${production.src.dir}" />
+      <class location="${production.classes.dist}" />
+    </findbugs>
+  </target>
+
+  <target name="make.findbugs.custom.detector">
+    <delete dir="${findbugs.custom.classes.dist}" />
+    <mkdir dir="${findbugs.custom.classes.dist}" />
+    <javac srcdir="${findbugs.src.dir}" destdir="${findbugs.custom.classes.dist}" classpathref="tools_lib" encoding="UTF-8" debug="on"/>
+    <jar destfile="${findbugs.home}/plugin/custom-detecors.jar" >
+      <fileset dir="${findbugs.custom.classes.dist}"/>
+      <fileset dir="${findbugs.resources.dir}"/>
+    </jar>
+  </target>
+
+  <target name="cpd" depends="compile.production">
+    <delete dir="${dist.root}/cpd" />
+    <mkdir dir="${dist.root}/cpd"/>
+    <taskdef name="cpd" classname="net.sourceforge.pmd.cpd.CPDTask" classpathref="pmd_lib"/>
+    <cpd minimumtokencount="3" format="xml" outputfile="${dist.root}/cpd/cpd-result.xml" encoding="UTF-8">
+      <fileset dir="${production.src.dir}"/>
+    </cpd>
+  </target>
+
+</project>
